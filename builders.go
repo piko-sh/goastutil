@@ -25,7 +25,7 @@ import (
 	"go/printer"
 	"go/token"
 	"strconv"
-	"sync"
+	"strings"
 
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/imports"
@@ -49,11 +49,11 @@ var (
 	// Ident instance across multiple locations in the AST.
 	staticIdentCache = make(map[string]*ast.Ident, 128)
 
-	// dynamicIdentCache is an atomic cache for identifiers not in the static cache.
-	dynamicIdentCache sync.Map
+	// dynamicIdentCache bounds identifiers not in the static cache.
+	dynamicIdentCache boundedCache[*ast.Ident]
 
 	// strLitCache is a dynamic cache for string literals that appear multiple times.
-	strLitCache sync.Map
+	strLitCache boundedCache[*ast.BasicLit]
 
 	// litIntZero is a shared AST literal node for the integer value 0.
 	litIntZero = &ast.BasicLit{Kind: token.INT, Value: "0"}
@@ -65,11 +65,12 @@ var (
 	litEmptyString = &ast.BasicLit{Kind: token.STRING, Value: `""`}
 )
 
-// ResetDynamicCaches clears the dynamic identifier and string literal caches. This is
-// intended for test isolation between iterations.
+// ResetDynamicCaches safely clears all dynamic caches, including parsed types.
+// Cached values already handed to callers remain valid.
 func ResetDynamicCaches() {
-	dynamicIdentCache = sync.Map{}
-	strLitCache = sync.Map{}
+	dynamicIdentCache.Clear()
+	strLitCache.Clear()
+	typeASTCache.Clear()
 }
 
 // RegisterIdent adds an identifier to the static cache for reuse. Call this at package
@@ -93,16 +94,13 @@ func CachedIdent(name string) *ast.Ident {
 		return cached
 	}
 	if cached, ok := dynamicIdentCache.Load(name); ok {
-		if identifier, isIdent := cached.(*ast.Ident); isIdent {
-			return identifier
-		}
+		return cached
 	}
-	newIdent := &ast.Ident{Name: name}
-	actual, _ := dynamicIdentCache.LoadOrStore(name, newIdent)
-	if result, isIdent := actual.(*ast.Ident); isIdent {
-		return result
+	if len(name) > dynamicCacheMaxKeyBytes {
+		return &ast.Ident{Name: name}
 	}
-	return newIdent
+	name = strings.Clone(name)
+	return dynamicIdentCache.Store(name, &ast.Ident{Name: name})
 }
 
 // NilIdent returns the cached identifier for the nil literal.
@@ -122,7 +120,7 @@ func ErrIdent() *ast.Ident {
 // StrLit creates a Go AST string literal from a string value.
 //
 // It uses a two-level cache to reduce memory use during code generation: a fixed cache
-// for the empty string and a shared cache for strings that appear more than once.
+// for the empty string and a bounded cache keyed by the unquoted value.
 //
 // Takes s (string) which is the value to convert to an AST literal.
 //
@@ -132,19 +130,11 @@ func StrLit(s string) *ast.BasicLit {
 		return litEmptyString
 	}
 
-	quoted := strconv.Quote(s)
-	if cached, ok := strLitCache.Load(quoted); ok {
-		if lit, isBasicLit := cached.(*ast.BasicLit); isBasicLit {
-			return lit
-		}
+	if cached, ok := strLitCache.Load(s); ok {
+		return cached
 	}
-
-	lit := &ast.BasicLit{Kind: token.STRING, Value: quoted}
-	actual, _ := strLitCache.LoadOrStore(quoted, lit)
-	if result, isBasicLit := actual.(*ast.BasicLit); isBasicLit {
-		return result
-	}
-	return lit
+	lit := &ast.BasicLit{Kind: token.STRING, Value: strconv.Quote(s)}
+	return strLitCache.Store(s, lit)
 }
 
 // IntLit creates a Go AST integer literal from an int value. Common values (0, 1) are

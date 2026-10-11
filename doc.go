@@ -41,7 +41,7 @@
 //
 // # Thread safety
 //
-// The identifier and literal caches (CachedIdent, StrLit) use sync.Map and are safe for
+// The identifier and literal caches (CachedIdent, StrLit) use bounded caches protected by mutexes and are safe for
 // concurrent use. The static identifier cache is populated at init time and is read-only
 // thereafter. RegisterIdent must only be called during package initialisation.
 //
@@ -49,6 +49,11 @@
 //
 // The package caches pre-parsed AST expressions for primitive types and reuses a shared
 // token.FileSet to minimise allocations in hot paths. The two-tier identifier cache
-// (static map + sync.Map) avoids repeated heap allocations for commonly occurring
+// (static map + bounded dynamic cache) avoids repeated heap allocations for commonly occurring
 // identifiers.
+
+// Dynamic caches retain at most 4096 entries and 1 MiB of key text apiece. Keys
+// larger than 4 KiB bypass caching. Eviction and ResetDynamicCaches are safe during
+// concurrent calls. Cache pointer identity is not guaranteed across eviction.
+
 package goastutil

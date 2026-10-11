@@ -26,7 +26,6 @@ import (
 	"go/token"
 	"strings"
 	"sync"
-	"sync/atomic"
 )
 
 const (
@@ -42,11 +41,6 @@ const (
 	// retired once its base passes ~1 GiB. (token.Pos is an int, so this guards retained
 	// memory, not 32-bit position overflow.)
 	maxParseFileSetBase = 1 << 30
-
-	// typeASTCacheMaxEntries bounds typeASTCache so a long-lived process (watch daemon)
-	// cannot accrete type-string templates without limit. On overflow the cache is wiped
-	// wholesale; type strings recur, so a wipe only costs a re-parse of those still in use.
-	typeASTCacheMaxEntries = 10000
 )
 
 var (
@@ -101,11 +95,7 @@ var (
 	// never returned directly, every caller gets an independent clone, preserving the
 	// copy-on-handout invariant the qualify*/unqualify* passes (which mutate in place) rely
 	// on.
-	typeASTCache sync.Map
-
-	// typeASTCacheEntries counts live typeASTCache entries so it can be wiped wholesale once
-	// it passes typeASTCacheMaxEntries.
-	typeASTCacheEntries atomic.Int64
+	typeASTCache boundedCache[ast.Expr]
 )
 
 // parseTypeExpr parses a Go expression against a pooled FileSet.
@@ -125,6 +115,7 @@ func parseTypeExpr(src string) (ast.Expr, error) {
 		fset = token.NewFileSet()
 	}
 	expr, err := parser.ParseExprFrom(fset, "", src, 0)
+	fset.Iterate(func(file *token.File) bool { fset.RemoveFile(file); return true })
 	if fset.Base() < maxParseFileSetBase {
 		parseFileSetPool.Put(fset)
 	}
@@ -149,22 +140,20 @@ func TypeStringToAST(typeString string) ast.Expr {
 	}
 
 	if template, ok := typeASTCache.Load(typeString); ok {
-		if clone := cloneExprStructural(template.(ast.Expr)); clone != nil {
+		if clone := cloneExprStructural(template); clone != nil {
 			return clone
 		}
 	}
 
+	if len(typeString) <= dynamicCacheMaxKeyBytes {
+		typeString = strings.Clone(typeString)
+	}
 	expression, err := parseTypeExpr(typeString)
 	if err != nil {
 		return ast.NewIdent("any /* failed to parse type string: " + strings.ReplaceAll(typeString, " ", "_") + " */")
 	}
 	if clone := cloneExprStructural(expression); clone != nil {
-		if _, loaded := typeASTCache.LoadOrStore(typeString, expression); !loaded {
-			if typeASTCacheEntries.Add(1) > typeASTCacheMaxEntries {
-				typeASTCache.Clear()
-				typeASTCacheEntries.Store(0)
-			}
-		}
+		typeASTCache.Store(typeString, expression)
 		return clone
 	}
 	return expression

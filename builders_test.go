@@ -81,7 +81,6 @@ func TestCachedIdent_DynamicCacheHit(t *testing.T) {
 	t.Parallel()
 
 	name := "testDynCacheIdent_unique_42"
-	dynamicIdentCache.Delete(name)
 
 	first := CachedIdent(name)
 	require.NotNil(t, first)
@@ -95,7 +94,6 @@ func TestCachedIdent_NonCachedName(t *testing.T) {
 	t.Parallel()
 
 	name := "testNonCached_unique_99"
-	dynamicIdentCache.Delete(name)
 
 	identifier := CachedIdent(name)
 	require.NotNil(t, identifier)
