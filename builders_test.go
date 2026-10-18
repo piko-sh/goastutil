@@ -21,7 +21,6 @@ package goastutil
 import (
 	"go/ast"
 	"go/token"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -81,7 +80,6 @@ func TestCachedIdent_DynamicCacheHit(t *testing.T) {
 	t.Parallel()
 
 	name := "testDynCacheIdent_unique_42"
-	dynamicIdentCache.Delete(name)
 
 	first := CachedIdent(name)
 	require.NotNil(t, first)
@@ -95,7 +93,6 @@ func TestCachedIdent_NonCachedName(t *testing.T) {
 	t.Parallel()
 
 	name := "testNonCached_unique_99"
-	dynamicIdentCache.Delete(name)
 
 	identifier := CachedIdent(name)
 	require.NotNil(t, identifier)
@@ -672,24 +669,4 @@ func TestAddNamedImport(t *testing.T) {
 		}
 	}
 	assert.True(t, found, "expected named import 'myfmt \"fmt\"' to be present")
-}
-
-func TestFormatAST(t *testing.T) {
-	t.Parallel()
-
-	fset := token.NewFileSet()
-	file := &ast.File{
-		Name: ast.NewIdent("main"),
-		Decls: []ast.Decl{
-			FuncDecl("main", nil, nil, BlockStmt()),
-		},
-	}
-
-	out, err := FormatAST(fset, file)
-	require.NoError(t, err)
-	require.NotEmpty(t, out)
-
-	src := string(out)
-	assert.True(t, strings.Contains(src, "package main"), "output should contain package declaration")
-	assert.True(t, strings.Contains(src, "func main()"), "output should contain function declaration")
 }

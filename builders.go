@@ -19,22 +19,14 @@
 package goastutil
 
 import (
-	"bytes"
-	"fmt"
 	"go/ast"
-	"go/printer"
 	"go/token"
 	"strconv"
-	"sync"
 
 	"golang.org/x/tools/go/ast/astutil"
-	"golang.org/x/tools/imports"
 )
 
 const (
-	// defaultTabWidth is the number of spaces used for tab indentation in Go code.
-	defaultTabWidth = 4
-
 	// identNameNil is the nil literal, emitted as an identifier by every generator that
 	// returns a zero value or compares against nil.
 	identNameNil = "nil"
@@ -49,11 +41,11 @@ var (
 	// Ident instance across multiple locations in the AST.
 	staticIdentCache = make(map[string]*ast.Ident, 128)
 
-	// dynamicIdentCache is an atomic cache for identifiers not in the static cache.
-	dynamicIdentCache sync.Map
+	// dynamicIdentCache caches identifiers not in the static cache, keyed by name.
+	dynamicIdentCache boundedCache[*ast.Ident]
 
-	// strLitCache is a dynamic cache for string literals that appear multiple times.
-	strLitCache sync.Map
+	// strLitCache caches string literals, keyed by their unquoted value.
+	strLitCache boundedCache[*ast.BasicLit]
 
 	// litIntZero is a shared AST literal node for the integer value 0.
 	litIntZero = &ast.BasicLit{Kind: token.INT, Value: "0"}
@@ -65,11 +57,15 @@ var (
 	litEmptyString = &ast.BasicLit{Kind: token.STRING, Value: `""`}
 )
 
-// ResetDynamicCaches clears the dynamic identifier and string literal caches. This is
-// intended for test isolation between iterations.
+// ResetDynamicCaches clears the dynamic identifier, string literal and parsed type
+// caches.
+//
+// This is intended for test isolation between iterations. It is safe to call while other
+// goroutines use the caches, and nodes already returned stay valid.
 func ResetDynamicCaches() {
-	dynamicIdentCache = sync.Map{}
-	strLitCache = sync.Map{}
+	dynamicIdentCache.Clear()
+	strLitCache.Clear()
+	typeASTCache.Clear()
 }
 
 // RegisterIdent adds an identifier to the static cache for reuse. Call this at package
@@ -92,17 +88,7 @@ func CachedIdent(name string) *ast.Ident {
 	if cached, ok := staticIdentCache[name]; ok {
 		return cached
 	}
-	if cached, ok := dynamicIdentCache.Load(name); ok {
-		if identifier, isIdent := cached.(*ast.Ident); isIdent {
-			return identifier
-		}
-	}
-	newIdent := &ast.Ident{Name: name}
-	actual, _ := dynamicIdentCache.LoadOrStore(name, newIdent)
-	if result, isIdent := actual.(*ast.Ident); isIdent {
-		return result
-	}
-	return newIdent
+	return dynamicIdentCache.LoadOrStore(name, newIdent)
 }
 
 // NilIdent returns the cached identifier for the nil literal.
@@ -122,7 +108,7 @@ func ErrIdent() *ast.Ident {
 // StrLit creates a Go AST string literal from a string value.
 //
 // It uses a two-level cache to reduce memory use during code generation: a fixed cache
-// for the empty string and a shared cache for strings that appear more than once.
+// for the empty string and a bounded cache keyed by the unquoted value.
 //
 // Takes s (string) which is the value to convert to an AST literal.
 //
@@ -132,19 +118,7 @@ func StrLit(s string) *ast.BasicLit {
 		return litEmptyString
 	}
 
-	quoted := strconv.Quote(s)
-	if cached, ok := strLitCache.Load(quoted); ok {
-		if lit, isBasicLit := cached.(*ast.BasicLit); isBasicLit {
-			return lit
-		}
-	}
-
-	lit := &ast.BasicLit{Kind: token.STRING, Value: quoted}
-	actual, _ := strLitCache.LoadOrStore(quoted, lit)
-	if result, isBasicLit := actual.(*ast.BasicLit); isBasicLit {
-		return result
-	}
-	return lit
+	return strLitCache.LoadOrStore(s, newStrLit)
 }
 
 // IntLit creates a Go AST integer literal from an int value. Common values (0, 1) are
@@ -504,23 +478,22 @@ func AddNamedImport(fset *token.FileSet, file *ast.File, name, path string) {
 	astutil.AddNamedImport(fset, file, name, path)
 }
 
-// FormatAST formats an AST file to Go source code with goimports processing.
+// newIdent builds the identifier CachedIdent caches for a name.
 //
-// Takes fset (*token.FileSet) which is the file set.
-// Takes file (*ast.File) which is the file to format.
+// Takes name (string) which is the identifier name.
 //
-// Returns []byte which is the formatted Go source code.
-// Returns error when formatting or import processing fails.
-func FormatAST(fset *token.FileSet, file *ast.File) ([]byte, error) {
-	buffer := new(bytes.Buffer)
-	printerConfig := printer.Config{
-		Mode:     printer.TabIndent | printer.UseSpaces,
-		Tabwidth: defaultTabWidth,
-	}
-	if err := printerConfig.Fprint(buffer, fset, file); err != nil {
-		return nil, fmt.Errorf("printing Go AST: %w", err)
-	}
-	return imports.Process("", buffer.Bytes(), nil)
+// Returns *ast.Ident which is the new identifier.
+func newIdent(name string) *ast.Ident {
+	return &ast.Ident{Name: name}
+}
+
+// newStrLit builds the literal StrLit caches for a string value.
+//
+// Takes s (string) which is the unquoted string value.
+//
+// Returns *ast.BasicLit which is the new quoted string literal.
+func newStrLit(s string) *ast.BasicLit {
+	return &ast.BasicLit{Kind: token.STRING, Value: strconv.Quote(s)}
 }
 
 func init() {

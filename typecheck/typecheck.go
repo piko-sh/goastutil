@@ -16,7 +16,12 @@
 // oppression. We built this to empower people, not to enable those who would
 // strip others of their rights and dignity.
 
-package goastutil
+// Package typecheck classifies go/types types: whether a type is a primitive, a built-in
+// or part of the standard library.
+//
+// It is a separate package from piko.sh/goastutil because it links go/types and
+// golang.org/x/tools/go/packages, which programs that only build AST nodes do not need.
+package typecheck
 
 import (
 	"go/types"

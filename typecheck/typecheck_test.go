@@ -16,7 +16,7 @@
 // oppression. We built this to empower people, not to enable those who would
 // strip others of their rights and dignity.
 
-package goastutil_test
+package typecheck_test
 
 import (
 	"go/types"
@@ -28,7 +28,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/tools/go/packages"
-	"piko.sh/goastutil"
+	"piko.sh/goastutil/typecheck"
 )
 
 func TestIsPrimitive(t *testing.T) {
@@ -74,7 +74,7 @@ func TestIsPrimitive(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			result := goastutil.IsPrimitive(tc.typ)
+			result := typecheck.IsPrimitive(tc.typ)
 			assert.Equal(t, tc.expected, result)
 		})
 	}
@@ -89,17 +89,17 @@ func TestIsPrimitive_NamedTypes(t *testing.T) {
 			types.Typ[types.Int],
 			nil,
 		)
-		assert.False(t, goastutil.IsPrimitive(namedType))
+		assert.False(t, typecheck.IsPrimitive(namedType))
 	})
 
 	t.Run("Named type without package (builtin error) is not primitive due to methods", func(t *testing.T) {
 		errorType := types.Universe.Lookup("error").Type()
-		assert.False(t, goastutil.IsPrimitive(errorType))
+		assert.False(t, typecheck.IsPrimitive(errorType))
 	})
 
 	t.Run("Named type without package (builtin any) is primitive", func(t *testing.T) {
 		anyType := types.Universe.Lookup("any").Type()
-		assert.True(t, goastutil.IsPrimitive(anyType))
+		assert.True(t, typecheck.IsPrimitive(anyType))
 	})
 }
 
@@ -109,7 +109,7 @@ func TestIsPrimitive_TypeParam(t *testing.T) {
 			types.NewTypeName(0, nil, "T", nil),
 			types.NewInterfaceType(nil, nil),
 		)
-		assert.False(t, goastutil.IsPrimitive(typeParam))
+		assert.False(t, typecheck.IsPrimitive(typeParam))
 	})
 }
 
@@ -117,7 +117,7 @@ func TestIsPrimitive_MapWithFunctionKey(t *testing.T) {
 	t.Run("Map with function key is primitive", func(t *testing.T) {
 		funcType := types.NewSignatureType(nil, nil, nil, nil, nil, false)
 		mapType := types.NewMap(funcType, types.Typ[types.String])
-		assert.True(t, goastutil.IsPrimitive(mapType))
+		assert.True(t, typecheck.IsPrimitive(mapType))
 	})
 }
 
@@ -126,35 +126,35 @@ func TestIsPrimitive_NestedComposites(t *testing.T) {
 		funcType := types.NewSignatureType(nil, nil, nil, nil, nil, false)
 		innerSlice := types.NewSlice(funcType)
 		outerSlice := types.NewSlice(innerSlice)
-		assert.True(t, goastutil.IsPrimitive(outerSlice))
+		assert.True(t, typecheck.IsPrimitive(outerSlice))
 	})
 
 	t.Run("Map containing slice of functions", func(t *testing.T) {
 		funcType := types.NewSignatureType(nil, nil, nil, nil, nil, false)
 		sliceOfFunc := types.NewSlice(funcType)
 		mapType := types.NewMap(types.Typ[types.String], sliceOfFunc)
-		assert.True(t, goastutil.IsPrimitive(mapType))
+		assert.True(t, typecheck.IsPrimitive(mapType))
 	})
 
 	t.Run("Pointer to pointer to function", func(t *testing.T) {
 		funcType := types.NewSignatureType(nil, nil, nil, nil, nil, false)
 		ptrToFunc := types.NewPointer(funcType)
 		ptrToPtrToFunc := types.NewPointer(ptrToFunc)
-		assert.True(t, goastutil.IsPrimitive(ptrToPtrToFunc))
+		assert.True(t, typecheck.IsPrimitive(ptrToPtrToFunc))
 	})
 
 	t.Run("Channel of channel of functions", func(t *testing.T) {
 		funcType := types.NewSignatureType(nil, nil, nil, nil, nil, false)
 		chanOfFunc := types.NewChan(types.SendRecv, funcType)
 		chanOfChanOfFunc := types.NewChan(types.SendRecv, chanOfFunc)
-		assert.True(t, goastutil.IsPrimitive(chanOfChanOfFunc))
+		assert.True(t, typecheck.IsPrimitive(chanOfChanOfFunc))
 	})
 
 	t.Run("Array of pointers to functions", func(t *testing.T) {
 		funcType := types.NewSignatureType(nil, nil, nil, nil, nil, false)
 		ptrToFunc := types.NewPointer(funcType)
 		arrayOfPtrToFunc := types.NewArray(ptrToFunc, 10)
-		assert.True(t, goastutil.IsPrimitive(arrayOfPtrToFunc))
+		assert.True(t, typecheck.IsPrimitive(arrayOfPtrToFunc))
 	})
 }
 
@@ -291,7 +291,7 @@ var (
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			actual := goastutil.IsGoInternalType(tc.typ, allPackages)
+			actual := typecheck.IsGoInternalType(tc.typ, allPackages)
 			assert.Equal(t, tc.expected, actual)
 		})
 	}

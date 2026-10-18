@@ -337,9 +337,11 @@ func TestSanitisersAreIdempotent(t *testing.T) {
 }
 
 func TestGoPredeclaredIdentifiersCoverTheUniverseScope(t *testing.T) {
-	for _, name := range types.Universe.Names() {
+	universe := types.Universe.Names()
+	for _, name := range universe {
 		assert.True(t, IsGoPredeclared(name), "universe name %q is not treated as predeclared", name)
 	}
+	assert.Len(t, goPredeclaredIdentifiers, len(universe), "the predeclared set holds names the universe scope does not")
 
 	assert.True(t, IsGoPredeclared("any"))
 	assert.True(t, IsGoPredeclared("min"))

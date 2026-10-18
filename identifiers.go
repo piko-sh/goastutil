@@ -21,7 +21,6 @@ package goastutil
 import (
 	"fmt"
 	"go/token"
-	"go/types"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -94,9 +93,18 @@ var (
 	//
 	// Shadowing one of these is legal Go but breaks every other emitted line that relied on
 	// the original meaning, so no sanitised name is ever allowed to equal one. The set is
-	// read from go/types rather than listed by hand, so a new Go release cannot leave it
-	// stale.
-	goPredeclaredIdentifiers = buildGoPredeclaredIdentifiers()
+	// listed here rather than read from go/types, which would link the whole type checker
+	// into every program that builds an AST; a test compares it with go/types' universe so a
+	// new Go release cannot leave it stale.
+	goPredeclaredIdentifiers = map[string]struct{}{
+		"any": {}, "append": {}, "bool": {}, "byte": {}, "cap": {}, "clear": {}, "close": {},
+		"comparable": {}, "complex": {}, "complex128": {}, "complex64": {}, "copy": {},
+		"delete": {}, "error": {}, "false": {}, "float32": {}, "float64": {}, "imag": {},
+		"int": {}, "int16": {}, "int32": {}, "int64": {}, "int8": {}, "iota": {}, "len": {},
+		"make": {}, "max": {}, "min": {}, "new": {}, "nil": {}, "panic": {}, "print": {},
+		"println": {}, "real": {}, "recover": {}, "rune": {}, "string": {}, "true": {},
+		"uint": {}, "uint16": {}, "uint32": {}, "uint64": {}, "uint8": {}, "uintptr": {},
+	}
 )
 
 // IsValidGoIdentifier reports whether a name can be emitted as a Go identifier verbatim.
@@ -346,18 +354,4 @@ func guardGoReserved(name string) string {
 		return name + underscore
 	}
 	return name
-}
-
-// buildGoPredeclaredIdentifiers reads the predeclared identifiers from the universe
-// scope.
-//
-// Returns map[string]struct{} which is the predeclared identifier set.
-func buildGoPredeclaredIdentifiers() map[string]struct{} {
-	names := types.Universe.Names()
-	identifiers := make(map[string]struct{}, len(names))
-	for _, name := range names {
-		identifiers[name] = struct{}{}
-	}
-
-	return identifiers
 }
